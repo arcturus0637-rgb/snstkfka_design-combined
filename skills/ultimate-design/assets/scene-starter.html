@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scene starter</title>
+<!--
+  Starter for a page with one directed 3D scene behind real content.
+  Everything that decides the look is in LOOK and SHOTS near the top of the script.
+  The subject is a placeholder: replace createSubject() with the thing the page is about.
+
+  Assets and licences
+  - Simplex noise, Ian McEwan / Ashima Arts, MIT       https://github.com/ashima/webgl-noise
+  - three.js MIT, GSAP (free standard licence), Geist / Instrument Serif / Pretendard, SIL OFL
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..600&family=Geist+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&family=Noto+Serif+KR:wght@300..600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<style>
+  :root {
+    --bg: #07080b;
+    --ink: #eef0f3;
+    --muted: #8d95a3;
+    --line: rgba(255, 255, 255, .13);
+    --accent: #ffcf9a;            /* same family as the key light: page and scene share one palette */
+    --display: "Instrument Serif", "Noto Serif KR", serif;
+    --sans: "Geist", "Pretendard Variable", Pretendard, system-ui, sans-serif;
+    --mono: "Geist Mono", ui-monospace, monospace;
+    --gutter: clamp(20px, 4.4vw, 64px);
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html { background: var(--bg); color: var(--ink); font-family: var(--sans); -webkit-font-smoothing: antialiased; }
+  body { min-height: 100vh; overflow-x: hidden; }
+
+  #scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; opacity: 0; transition: opacity 1.4s ease; }
+  #scene.ready { opacity: 1; }
+  /* No WebGL: the page still has to read as designed, so the backdrop falls back to CSS. */
+  html.no-webgl body { background: radial-gradient(70% 60% at 72% 42%, #1c2434 0%, var(--bg) 72%); }
+
+  .nav, main { position: relative; z-index: 1; }
+  .nav { position: fixed; inset: 0 0 auto 0; display: flex; justify-content: space-between; align-items: center;
+         padding: 22px var(--gutter); font: 500 12px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+  .nav a { color: var(--muted); text-decoration: none; margin-left: 28px; transition: color .2s; }
+  .nav a:hover { color: var(--ink); }
+
+  section { min-height: 100svh; padding: clamp(96px, 16vh, 168px) var(--gutter); display: grid; align-content: end; }
+  .eyebrow { font: 500 12px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--accent); margin-bottom: 28px; }
+  h1, h2 { font-family: var(--display); font-weight: 400; letter-spacing: -.02em; word-break: keep-all; text-wrap: balance; }
+  h1 { font-size: clamp(48px, 8vw, 128px); line-height: 1.04; max-width: 6.4em; }
+  h2 { font-size: clamp(34px, 4.6vw, 68px); line-height: 1.12; max-width: 9em; }
+  /* Emphasis by colour. Hangul has no italic: a synthesised slant looks broken, so keep italics for Latin text only. */
+  em { font-style: normal; color: var(--accent); }
+  em:lang(en) { font-style: italic; }
+  .lede { margin-top: 32px; max-width: 34em; font-size: clamp(16px, 1.25vw, 19px); line-height: 1.65; color: var(--muted); word-break: keep-all; }
+  .cta { display: inline-flex; gap: 10px; align-items: center; margin-top: 40px; padding: 15px 22px; border: 1px solid var(--line);
+         border-radius: 999px; color: var(--ink); text-decoration: none; font-size: 14px;
+         background: rgba(255,255,255,.06); transition: background .25s, border-color .25s; justify-self: start; }
+  /* No backdrop-filter on anything above the canvas: the compositor has to re-blur the live scene, which
+     measured as a 67ms hitch at the start of every scroll and a constant cost on a dense screen. */
+  .cta:hover { background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.3); }
+
+  .detail { align-content: center; justify-items: end; }
+  .detail > div { width: min(520px, 100%); }
+  /* On a wide layout the copy is a share of the viewport, so it cannot reach the subject on a narrower window. */
+  @media (min-aspect-ratio: 1/1) { .detail > div { width: min(520px, 42vw); } .lede { max-width: min(34em, 46vw); } }
+  .rows { margin-top: 44px; border-top: 1px solid var(--line); }
+  .rows div { display: grid; grid-template-columns: 5.5em 1fr; gap: 18px; padding: 20px 0; border-bottom: 1px solid var(--line);
+              font-size: 15px; line-height: 1.6; color: var(--muted); word-break: keep-all; }
+  .rows b { font: 500 12px/1.9 var(--mono); letter-spacing: .08em; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+  .outro { align-content: end; justify-items: center; text-align: center; }
+  .outro h2 { max-width: 14em; }
+  .foot { margin-top: 56px; font: 400 12px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+
+  @media (max-aspect-ratio: 1/1) {
+    .nav a:not(:last-child) { display: none; }
+    /* On a phone the subject owns the top of the screen and the copy the rest. The scrim is fixed,
+       so whatever the camera does, text never sits directly on a bright surface. */
+    .scrim { position: fixed; inset: 34% 0 0 0; pointer-events: none;
+             background: linear-gradient(to bottom, transparent, rgba(7,8,11,.9) 38%); }
+    .detail { align-content: end; }
+  }
+</style>
+</head>
+<body>
+<canvas id="scene" aria-hidden="true"></canvas>
+<div class="scrim" aria-hidden="true"></div>
+
+<header class="nav">
+  <span>Studio&nbsp;Name</span>
+  <nav><a href="#work">Work</a><a href="#about">About</a><a href="#contact">Contact</a></nav>
+</header>
+
+<main>
+  <section class="hero">
+    <p class="eyebrow" data-reveal>Index 01 — 2026</p>
+    <h1 data-reveal>빛으로 빚은 <em>형태</em></h1>
+    <p class="lede" data-reveal>이 자리는 페이지의 한 문장 요약이다. 무엇을 보여주는 곳이고 왜 봐야 하는지를 두 줄 안에 말한다.</p>
+    <a class="cta" href="#work" data-reveal>작업 보기 <span aria-hidden="true">→</span></a>
+  </section>
+
+  <section class="detail" id="work">
+    <div>
+      <p class="eyebrow" data-reveal>Process</p>
+      <h2 data-reveal>가까이에서 본 <em>표면</em></h2>
+      <div class="rows">
+        <div data-reveal><b>01</b><span>카메라가 다가오는 동안 글은 반대편으로 비켜선다. 장면과 글이 같은 자리를 다투지 않는다.</span></div>
+        <div data-reveal><b>02</b><span>스크롤 한 구간에 카메라 움직임은 하나다. 무엇을 보라는 뜻인지가 분명해야 한다.</span></div>
+        <div data-reveal><b>03</b><span>강조색은 주광의 색에서 가져온다. 페이지와 장면이 한 팔레트를 쓴다.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="outro" id="contact">
+    <h2 data-reveal>멀어지면 <em>전체</em>가 보인다</h2>
+    <p class="foot" data-reveal>hello@example.com — Seoul</p>
+  </section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.15.1/dist/gsap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.15.1/dist/ScrollTrigger.min.js"></script>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/"
+}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+
+gsap.registerPlugin(ScrollTrigger);
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const lowPower = matchMedia('(max-width: 768px)').matches || (navigator.hardwareConcurrency || 8) <= 4;
+
+// ---------------------------------------------------------------- the look
+// Every number that decides how the frame looks lives here. Tune these against screenshots.
+const LOOK = {
+  toneMapping: THREE.ACESFilmicToneMapping,
+  exposure: 1.0,
+  envIntensity: 0.3,
+  envRotationY: 0,
+  // What the materials reflect. Panels are [width, height, colour, power, position, rotation]; powers above 1
+  // are real, because the environment is baked to a float target. Broad and moderate is what survives a
+  // subject that turns: a narrow panel at 20x draws a beautiful line at one angle and clips a face at another.
+  studio: {
+    room: 0x171c26,              // never black: angles that miss every panel still need something to reflect
+    panels: [
+      [9, 6, 0xfff0dc, 7.0, [2.5, 6.5, 1.5], [Math.PI / 2, 0, 0.3]],       // overhead softbox, warm, off-centre toward the key
+      [8, 5, 0x9fc4f0, 2.2, [-7, 1.5, 0], [0, Math.PI / 2, 0]],            // cool wall on the rim side
+      [11, 1.2, 0xffffff, 9.0, [0, 1.6, -6.5], [0, 0, 0]],                 // liner: the bright line along a chamfer
+      [4, 2.4, 0xf0a259, 4.0, [6, 0.6, 3.5], [0, -Math.PI / 2.4, 0]],      // warm kicker, low on the key side
+    ],
+  },
+  fov: 30,                     // telephoto: compressed, product-like
+  key: { color: 0xffc48a, intensity: 1.8, position: [4, 3.2, 5] },      // warm, front-right, above
+  rim: { color: 0x8fb8ff, intensity: 1.7, position: [-5, 1.5, -4.5] },  // cool, behind-left: draws the silhouette
+  bloom: { strength: 0.15, radius: 0.7, threshold: 1.0 },             // only the rim edge and the key highlight should glow
+  finish: { vignette: 0.42, grain: 0.04, aberration: 0.35 },
+  backdrop: { base: 0x06070a, glow: 0x1a2438, warm: 0x2a1c12 },
+  maxDpr: lowPower ? 1.5 : 2,
+  pixelBudget: 2.6e6,          // rendered pixels. 1440x900 at DPR 2 is 5.2M and ran at 45fps on an integrated GPU; 2.9M ran at 60
+};
+
+// One entry per section: where the subject sits in the frame (-1..1 of the half-frame),
+// how close the camera is (multiplier on the fitted distance), and the form's state.
+const SHOTS = [
+  { x: 0.52, y: 0.04, dist: 1.0, spin: 0.0, amp: 0.26 },    // hero: subject right, copy left
+  { x: -0.5, y: 0.0, dist: 0.62, spin: 1.5, amp: 0.36 },    // detail: dolly in, subject left, copy right
+  { x: 0.0, y: 0.3, dist: 1.3, spin: 2.9, amp: 0.2 },       // outro: crane back, centred above the line
+];
+const SUBJECT_RADIUS = 1.4;    // used to fit the camera, so framing survives any aspect ratio
+
+// ---------------------------------------------------------------- page motion (runs even without WebGL)
+const state = { ...SHOTS[0] };
+const intro = { dolly: reduced ? 1 : 1.32 };
+if (!reduced) {
+  gsap.from('.hero [data-reveal]', { y: 28, opacity: 0, duration: 1.1, ease: 'power3.out', stagger: 0.09, delay: 0.25 });
+  gsap.utils.toArray('section:not(.hero)').forEach(section => {
+    gsap.from(section.querySelectorAll('[data-reveal]'), {
+      y: 28, opacity: 0, duration: 0.9, ease: 'power3.out', stagger: 0.08,
+      scrollTrigger: { trigger: section, start: 'top 68%' },
+    });
+  });
+  gsap.to(intro, { dolly: 1, duration: 2.6, ease: 'power3.out' });
+}
+// The camera path is scrubbed by scroll: one move per section, never two at once.
+const path = gsap.timeline({ scrollTrigger: { trigger: 'main', start: 'top top', end: 'bottom bottom', scrub: reduced ? true : 1.2 } });
+SHOTS.slice(1).forEach(shot => path.to(state, { ...shot, duration: 1, ease: 'power2.inOut' }));
+
+// ---------------------------------------------------------------- scene
+const canvas = document.getElementById('scene');
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+} catch (error) {
+  document.documentElement.classList.add('no-webgl');
+  throw error;
+}
+renderer.toneMapping = LOOK.toneMapping;
+renderer.toneMappingExposure = LOOK.exposure;
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(LOOK.fov, 1, 0.1, 100);
+const clock = { time: { value: 0 } };
+
+// Environment: a small studio built in code and baked once, before the first frame. Nothing is
+// downloaded, so the look is identical on every load and offline, and no frame stalls when a file
+// arrives. (An HDRI is the alternative; the reference lists what it costs.)
+function studioEnvironment() {
+  const studio = new THREE.Scene();
+  studio.add(new THREE.Mesh(new THREE.BoxGeometry(18, 18, 18), new THREE.MeshBasicMaterial({ color: LOOK.studio.room, side: THREE.BackSide })));
+  // Every panel fades toward its edges, like a real softbox. An evenly bright panel reflects as an
+  // evenly bright face; the falloff is what puts a gradient across a flat metal surface.
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d'), fade = g.createRadialGradient(64, 64, 6, 64, 64, 64);
+  fade.addColorStop(0, '#fff'); fade.addColorStop(0.55, '#8a8a8a'); fade.addColorStop(1, '#000');
+  g.fillStyle = fade; g.fillRect(0, 0, 128, 128);
+  const falloff = new THREE.CanvasTexture(c);
+  for (const [width, height, colour, power, position, rotation] of LOOK.studio.panels) {
+    const panel = new THREE.Mesh(new THREE.PlaneGeometry(width, height),
+      new THREE.MeshBasicMaterial({ map: falloff, color: new THREE.Color(colour).multiplyScalar(power), side: THREE.DoubleSide }));
+    panel.position.set(...position);
+    panel.rotation.set(...rotation);
+    studio.add(panel);
+  }
+  return studio;
+}
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(studioEnvironment(), 0.02).texture;
+scene.environmentIntensity = LOOK.envIntensity;
+scene.environmentRotation.y = LOOK.envRotationY;
+pmrem.dispose();
+
+const key = new THREE.DirectionalLight(LOOK.key.color, LOOK.key.intensity);
+key.position.set(...LOOK.key.position);
+const rim = new THREE.DirectionalLight(LOOK.rim.color, LOOK.rim.intensity);
+rim.position.set(...LOOK.rim.position);
+scene.add(key, rim);
+
+// Backdrop: a screen-space gradient with its glow placed behind the subject, so the
+// silhouette always has something to read against. Kept below 1.0 so bloom ignores it.
+const backdrop = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
+  depthTest: false, depthWrite: false,
+  uniforms: {
+    uCenter: { value: new THREE.Vector2(0.5, 0.5) },
+    uAspect: { value: 1 },
+    uBase: { value: new THREE.Color(LOOK.backdrop.base) },
+    uGlow: { value: new THREE.Color(LOOK.backdrop.glow) },
+    uWarm: { value: new THREE.Color(LOOK.backdrop.warm) },
+  },
+  vertexShader: /* glsl */`
+    varying vec2 vUv;
+    void main() { vUv = uv; gl_Position = vec4(position.xy, 1.0, 1.0); }`,
+  fragmentShader: /* glsl */`
+    uniform vec2 uCenter; uniform float uAspect; uniform vec3 uBase, uGlow, uWarm;
+    varying vec2 vUv;
+    void main() {
+      vec2 d = (vUv - uCenter) * vec2(uAspect, 1.0);
+      float halo = smoothstep(0.95, 0.0, length(d));                       // cool glow behind the subject
+      float ember = smoothstep(0.7, 0.0, length(d - vec2(0.28, -0.3)));    // warm bounce, low on the key side
+      vec3 col = uBase + uGlow * halo * halo + uWarm * ember * ember * 0.7;
+      gl_FragColor = vec4(col, 1.0);
+    }`,
+}));
+backdrop.frustumCulled = false;
+backdrop.renderOrder = -1;
+scene.add(backdrop);
+
+const NOISE = /* glsl */`
+  vec3 sn_mod(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+  vec4 sn_mod(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+  vec4 sn_perm(vec4 x) { return sn_mod(((x * 34.0) + 10.0) * x); }
+  float snoise(vec3 v) {
+    const vec2 C = vec2(1.0 / 6.0, 1.0 / 3.0); const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+    vec3 i = floor(v + dot(v, C.yyy)); vec3 x0 = v - i + dot(i, C.xxx);
+    vec3 g = step(x0.yzx, x0.xyz); vec3 l = 1.0 - g; vec3 i1 = min(g.xyz, l.zxy); vec3 i2 = max(g.xyz, l.zxy);
+    vec3 x1 = x0 - i1 + C.xxx; vec3 x2 = x0 - i2 + C.yyy; vec3 x3 = x0 - D.yyy;
+    i = sn_mod(i);
+    vec4 p = sn_perm(sn_perm(sn_perm(i.z + vec4(0.0, i1.z, i2.z, 1.0)) + i.y + vec4(0.0, i1.y, i2.y, 1.0)) + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+    vec3 ns = 0.142857142857 * D.wyz - D.xzx;
+    vec4 j = p - 49.0 * floor(p * ns.z * ns.z); vec4 x_ = floor(j * ns.z); vec4 y_ = floor(j - 7.0 * x_);
+    vec4 x = x_ * ns.x + ns.yyyy; vec4 y = y_ * ns.x + ns.yyyy; vec4 h = 1.0 - abs(x) - abs(y);
+    vec4 b0 = vec4(x.xy, y.xy); vec4 b1 = vec4(x.zw, y.zw);
+    vec4 s0 = floor(b0) * 2.0 + 1.0; vec4 s1 = floor(b1) * 2.0 + 1.0; vec4 sh = -step(h, vec4(0.0));
+    vec4 a0 = b0.xzyw + s0.xzyw * sh.xxyy; vec4 a1 = b1.xzyw + s1.xzyw * sh.zzww;
+    vec3 p0 = vec3(a0.xy, h.x); vec3 p1 = vec3(a0.zw, h.y); vec3 p2 = vec3(a1.xy, h.z); vec3 p3 = vec3(a1.zw, h.w);
+    vec4 norm = 1.79284291400159 - 0.85373472095314 * vec4(dot(p0, p0), dot(p1, p1), dot(p2, p2), dot(p3, p3));
+    p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
+    vec4 m = max(0.5 - vec4(dot(x0, x0), dot(x1, x1), dot(x2, x2), dot(x3, x3)), 0.0); m = m * m;
+    return 105.0 * dot(m * m, vec4(dot(p0, x0), dot(p1, x1), dot(p2, x2), dot(p3, x3)));
+  }`;
+
+// The subject. PLACEHOLDER: swap this for the thing the page is about (a model, a data-driven
+// form, a particle field). It shows the pattern worth keeping: a built-in PBR material extended
+// with onBeforeCompile, so custom geometry still gets env reflections, clearcoat and tone mapping.
+function createSubject() {
+  const uniforms = { uTime: clock.time, uAmp: { value: SHOTS[0].amp } };
+  const material = new THREE.MeshPhysicalMaterial({
+    color: 0xa7adb8, metalness: 1, roughness: 0.22,     // metalness is 0 or 1, never in between
+  });
+  material.onBeforeCompile = shader => {
+    Object.assign(shader.uniforms, uniforms);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>
+        uniform float uTime, uAmp;
+        ${NOISE}
+        vec3 displaceAt(vec3 p) {
+          float broad = snoise(p * 0.62 + vec3(0.0, uTime * 0.11, uTime * 0.07));
+          float fine = snoise(p * 1.7 - vec3(uTime * 0.09)) * 0.14;
+          return p + normalize(p) * (broad + fine) * uAmp;
+        }
+        vec3 anyTangent(vec3 n) { return normalize(abs(n.x) > abs(n.z) ? vec3(-n.y, n.x, 0.0) : vec3(0.0, -n.z, n.y)); }`)
+      // Displacing vertices without recomputing normals leaves the lighting of the original
+      // sphere on the new shape. Sample two neighbours and rebuild the normal from them.
+      .replace('#include <beginnormal_vertex>', `
+        vec3 dPos = displaceAt(position);
+        vec3 tA = anyTangent(normal);
+        vec3 tB = normalize(cross(normal, tA));
+        vec3 objectNormal = normalize(cross(displaceAt(position + tA * 0.01) - dPos, displaceAt(position + tB * 0.01) - dPos));
+        #ifdef USE_TANGENT
+          vec3 objectTangent = vec3(tangent.xyz);
+        #endif`)
+      .replace('#include <begin_vertex>', 'vec3 transformed = dPos;');
+  };
+  const mesh = new THREE.Mesh(new THREE.IcosahedronGeometry(1, lowPower ? 32 : 72), material);
+  mesh.userData.uniforms = uniforms;
+  return mesh;
+}
+const subject = createSubject();
+scene.add(subject);
+
+// Dust: motes far from the focal plane are drawn larger and fainter, which reads as depth of
+// field without paying for a real DOF pass.
+function createDust(count) {
+  const positions = new Float32Array(count * 3), seeds = new Float32Array(count);
+  for (let i = 0; i < count; i++) {
+    positions.set([(Math.random() - 0.5) * 14, (Math.random() - 0.5) * 8, (Math.random() - 0.5) * 12 + 1], i * 3);
+    seeds[i] = Math.random();
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 1));
+  const material = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    uniforms: { uTime: clock.time, uScale: { value: 1 }, uMaxSize: { value: 64 }, uFocus: { value: 8 }, uColor: { value: new THREE.Color(0xffe6c8) } },
+    vertexShader: /* glsl */`
+      attribute float aSeed; uniform float uTime, uScale, uMaxSize, uFocus; varying float vAlpha;
+      void main() {
+        vec3 p = position;
+        p.x += cos(uTime * 0.10 + aSeed * 60.0) * 0.3;
+        p.y += sin(uTime * 0.14 + aSeed * 40.0) * 0.3;
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        float depth = -mv.z;
+        float blur = clamp(abs(depth - uFocus) / uFocus, 0.0, 1.0);
+        float size = 0.012 + aSeed * 0.014 + blur * blur * 0.22;            // world units
+        gl_PointSize = min(size * uScale / depth, uMaxSize);                                // uScale = pixels per world unit at depth 1
+        // A defocused mote spreads the same light over a larger disc, so it must get fainter as it grows.
+        vAlpha = 0.9 / (1.0 + pow(blur * 9.0, 2.0)) * (0.6 + 0.4 * sin(uTime * 0.7 + aSeed * 100.0)) * step(2.5, depth);
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: /* glsl */`
+      uniform vec3 uColor; varying float vAlpha;
+      void main() {
+        float soft = smoothstep(0.5, 0.12, length(gl_PointCoord - 0.5));
+        gl_FragColor = vec4(uColor * soft * vAlpha, 1.0);
+      }`,
+  });
+  return new THREE.Points(geometry, material);
+}
+const dust = createDust(lowPower ? 140 : 420);
+scene.add(dust);
+
+// ---------------------------------------------------------------- post-processing
+// Render -> bloom -> tone map and sRGB -> finish (aberration, vignette, grain) in display space.
+// The multisampled float target is what gives antialiasing: the canvas `antialias` flag does
+// nothing once rendering goes through a composer.
+const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, {
+  type: THREE.HalfFloatType, samples: lowPower || devicePixelRatio > 1.25 ? 2 : 4,      // 0 leaves visibly stepped silhouettes, even on a phone
+}));
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), LOOK.bloom.strength, LOOK.bloom.radius, LOOK.bloom.threshold);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+const finish = new ShaderPass({
+  uniforms: {
+    tDiffuse: { value: null }, uTime: clock.time,
+    uVignette: { value: LOOK.finish.vignette }, uGrain: { value: LOOK.finish.grain }, uAberration: { value: LOOK.finish.aberration },
+  },
+  vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse; uniform float uTime, uVignette, uGrain, uAberration; varying vec2 vUv;
+    float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+    void main() {
+      vec2 c = vUv - 0.5;
+      float edge = dot(c, c) * 2.0;                        // 0 at the centre, 1 in the corners
+      vec2 shift = c * edge * uAberration * 0.012;         // aberration belongs to the edges of a lens, never the centre
+      vec3 col = vec3(texture2D(tDiffuse, vUv + shift).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv - shift).b);
+      col *= 1.0 - uVignette * smoothstep(0.15, 1.0, edge);
+      col += (hash(vUv * 1000.0 + fract(uTime) * 61.0) - 0.5) * uGrain;   // grain also hides banding in the dark gradient
+      gl_FragColor = vec4(col, 1.0);
+    }`,
+});
+composer.addPass(finish);
+
+// ---------------------------------------------------------------- framing
+let fitted = 8, halfW = 1, halfH = 1, portrait = false;
+
+// Resolution. Cost follows the number of pixels rendered, not the device pixel ratio, so the starting
+// resolution comes from a pixel budget. A governor then covers the GPUs the budget was not tuned on:
+// when frames stay long it drops the resolution in one step sized to how slow they are. It only ever
+// steps down, so the image never pumps.
+const MIN_RATIO = 0.75;
+let pixelRatio = 1, dprCap = Infinity, pace = 16.7, strikes = 0, warmup = 0;
+function govern(dt) {
+  if (++warmup < 60) return;                       // loading and shader compilation are not the steady state
+  pace += (dt * 1000 - pace) * 0.08;
+  strikes = pace > 21 ? strikes + 1 : 0;
+  if (strikes > 30 && pixelRatio > MIN_RATIO) {
+    dprCap = Math.max(MIN_RATIO, pixelRatio * Math.sqrt(16.7 / pace));
+    strikes = 0; pace = 16.7;
+    resize();
+  }
+}
+function resize() {
+  const w = innerWidth, h = innerHeight;
+  const dpr = pixelRatio = Math.max(MIN_RATIO, Math.min(devicePixelRatio, LOOK.maxDpr, Math.sqrt(LOOK.pixelBudget / (w * h)), dprCap));
+  portrait = w / h < 1;                             // same condition as the CSS media query
+  renderer.setPixelRatio(dpr);
+  renderer.setSize(w, h, false);
+  composer.setPixelRatio(dpr);
+  composer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  // Fit by the limiting dimension: the subject fills 58% of the height on a wide frame, 78% of the width on a tall one.
+  const tan = Math.tan(THREE.MathUtils.degToRad(LOOK.fov / 2));
+  fitted = portrait ? SUBJECT_RADIUS / 0.78 / (tan * camera.aspect) : SUBJECT_RADIUS / 0.58 / tan;
+  halfH = tan * fitted; halfW = halfH * camera.aspect;
+  backdrop.material.uniforms.uAspect.value = camera.aspect;
+  dust.material.uniforms.uScale.value = h * dpr / (2 * tan);
+  dust.material.uniforms.uMaxSize.value = h * dpr * 0.06;
+  dust.material.uniforms.uFocus.value = fitted;
+}
+addEventListener('resize', resize);
+resize();
+
+const pointer = new THREE.Vector2(), eased = new THREE.Vector2(), projected = new THREE.Vector3();
+addEventListener('pointermove', e => pointer.set(e.clientX / innerWidth * 2 - 1, 1 - e.clientY / innerHeight * 2));
+
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min((now - last) / 1000, 0.1);
+  last = now;
+  if (!reduced) clock.time.value += dt;
+  govern(dt);
+  const t = clock.time.value;
+  eased.lerp(pointer, 1 - Math.exp(-dt * 2.5));           // frame-rate independent damping
+
+  // Subject placement comes from the current shot; on a tall screen it goes to the upper half instead of the side.
+  subject.position.set(portrait ? 0 : state.x * halfW, portrait ? halfH * 0.5 : state.y * halfH, 0);
+  subject.rotation.set(eased.y * -0.12, state.spin + t * 0.06 + eased.x * 0.18, 0);
+  subject.userData.uniforms.uAmp.value = state.amp;
+
+  // The camera only dollies (scroll) and drifts (pointer, idle). The subject does the turning.
+  // On a tall screen a close-up would spill the subject over the copy, so the dolly is capped.
+  const dist = fitted * (portrait ? Math.max(state.dist, 0.88) : state.dist) * intro.dolly;
+  camera.position.set(eased.x * 0.45 + Math.sin(t * 0.21) * 0.08, eased.y * 0.3 + Math.cos(t * 0.17) * 0.06, dist);
+  camera.lookAt(0, 0, 0);
+
+  // Keep the backdrop glow behind wherever the subject currently is in the frame.
+  projected.copy(subject.position).project(camera);
+  backdrop.material.uniforms.uCenter.value.set(projected.x * 0.5 + 0.5, projected.y * 0.5 + 0.5);
+
+  finish.uniforms.uTime.value = t;     // ShaderPass clones its uniforms, so the shared clock does not reach it
+  composer.render();
+  canvas.classList.add('ready');
+}
+renderer.setAnimationLoop(frame);
+document.addEventListener('visibilitychange', () => {
+  last = performance.now();
+  renderer.setAnimationLoop(document.hidden ? null : frame);
+});
+
+// For screenshots and tuning from the console.
+window.__look = { LOOK, SHOTS, state, renderer, scene, camera, key, rim, bloom, finish, subject };
+</script>
+</body>
+</html>
